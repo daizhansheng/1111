@@ -212,3 +212,591 @@ if __name__ == '__main__':
     p.join()
 ```
 
+# 4.进程间通信
+
+在 Python 中，`multiprocessing` 模块提供了多种进程间通信（IPC）方式，方便多个进程之间的数据交换和同步。这些通信方式在多进程编程中非常重要，尤其是在不同进程之间需要共享数据或协调操作的情况下。以下是 Python 中常用的几种进程间通信方式：
+
+## 4.1Pipe（管道）
+
+在 Python 中，`multiprocessing` 模块提供了 **Pipe()** 函数来实现进程间的通信。管道（Pipe）是双向的通信通道，可以连接两个进程，通过管道发送和接收数据。
+
+`Pipe()` 返回一个管道连接对象，它有以下操作方法：
+
+### 4.1.1创建管道
+
+通过 `Pipe()` 创建管道时，返回一个包含两个连接对象（端点）的元组：
+
+```python
+parent_conn, child_conn = Pipe(duplex=True)
+```
+
+- **`parent_conn`** 和 **`child_conn`**：这两个连接对象表示管道的两端。通过这些对象，进程之间可以进行数据交换。
+- **`duplex`**：可选参数，默认为 `True`，表示双向通信。如果设置为 `False`，管道是单向的，即只能在一个方向上传输数据。
+
+### 4.1.2管道操作方法
+
+管道的每个端点（`parent_conn` 和 `child_conn`）都有以下几个常用方法：
+
+1. `send(obj)`
+
+   将数据发送到管道的另一端。这个方法用于将 Python 对象传输到管道中。可以传输任意 Python 可序列化的数据（如字符串、字典、列表等）。
+
+   ```python
+   parent_conn.send("Hello from sender")
+   ```
+
+2. `recv()`
+
+   从管道中接收数据。接收方法会阻塞，直到管道另一端发送了数据。
+
+   ```python
+   data = child_conn.recv()
+   print(data)  # 打印接收到的数据
+   ```
+
+3. `close()`
+
+   关闭管道的一端，关闭后无法再使用该端点发送或接收数据。推荐在不再需要该端点时关闭它，防止资源浪费。
+
+   ```python
+   parent_conn.close()
+   ```
+
+4. `poll()`
+
+   `poll()` 方法用于检查管道是否有数据可接收。如果有数据返回 `True`，如果没有数据返回 `False`。这是一个非阻塞的方法。
+
+   ```python
+   if parent_conn.poll():
+       data = parent_conn.recv()
+   ```
+
+5. `fileno()`
+
+   `fileno()` 返回管道的文件描述符，主要用于底层的文件I/O操作。一般来说，普通的进程间通信不需要直接使用这个方法。
+
+   ```python
+   fd = parent_conn.fileno()
+   ```
+
+
+
+### 4.1.3管道通信实例
+
+父子进程双向通信实例：
+
+```python
+import os
+import sys
+import time
+from multiprocessing import *
+def process_handle1(child,pip1):
+    while True:
+        # Python子进程无法调用input，因为Python的终端只和主进程相关
+        # 默认子进程的输入是关闭的，但是可以使用系统的函数代替input输入
+        # s = input("input > ")
+        s = child.recv()
+        pip1.send(s)
+        if s == "quit":
+            exit(0)
+
+def process_handle2(pip2):
+    while True:
+        s = pip2.recv()
+        if s == "quit":
+            exit(0)
+        print(s,flush=True)
+
+if __name__ == '__main__':
+    parent, child = Pipe()
+    pip1,pip2 = Pipe()
+    p1 = Process(target=process_handle1,args=(child,pip1))
+    p2 = Process(target=process_handle2,args=(pip2,))
+    p1.start()
+    p2.start()
+
+    while True:
+        x = input()
+        parent.send(x)
+        if x=='quit':
+            break
+
+    p1.join()
+    p2.join()
+
+
+```
+
+管道大小验证实例：
+
+```python
+from multiprocessing import *
+
+
+def send(pipe):
+    n=0
+    while True:
+        pipe.send('a')
+        print(n)
+        n+=1
+
+if __name__ == '__main__':
+    p,c = Pipe()
+    process = Process(target=send,args=(c,))
+    process.start()
+    while True:
+        x = input()
+        p.recv()
+        if x == "quit":
+            process.terminate()
+            break
+    process.join()
+```
+
+### 4.1.4管道的特性
+
+1. 双向通信：
+
+   支持双向数据传输，两个进程可以互相发送和接收数据。
+
+2. 阻塞与非阻塞模式：
+
+   支持阻塞和非阻塞模式，读写操作可以设置为阻塞或非阻塞。
+
+3. 支持序列化数据：
+
+   可以传输任意可序列化的数据类型，如字符串、整数、对象等。
+
+4. 性能：
+
+   通常比文件或网络通信更高效，适用于小规模数据传输。
+
+## 4.2Queue（队列）
+
+在 Python 的 `multiprocessing` 模块中，`Queue` 是一种进程安全的先进先出（FIFO）数据结构，用于在不同进程之间交换数据。它适用于单向通信，`Queue` 非常适合实现生产者-消费者模式，多个进程可以安全地使用它来传递信息。
+
+以下是关于 `Queue` 的接口、操作方法和实例。
+
+### 4.2.1创建 Queue
+
+在 `multiprocessing` 中创建一个 `Queue` 非常简单：
+
+```python
+from multiprocessing import Queue
+
+q = Queue(maxsize=0)
+```
+
+- **`maxsize`**：指定队列的最大容量。默认为 `0`，表示队列没有大小限制。设置 `maxsize` 可以防止队列数据过多导致内存占用增加。
+
+### 4.2.2Queue 操作方法
+
+1. put(item)
+
+   将数据放入队列中，如果队列已满且 `maxsize` 被限制，`put()` 会阻塞直到有空余位置。
+
+   ```python
+   q.put("data")
+   ```
+
+2. get()
+
+   从队列中获取数据。若队列为空，`get()` 会阻塞等待数据直到队列中有内容。通常在消费者进程中使用。
+
+   ```python
+   data = q.get()
+   print("Received:", data)
+   ```
+
+3. put_nowait(item)
+
+   非阻塞地放入数据。如果队列已满，`put_nowait()` 会立即抛出 `queue.Full` 异常，而不会等待。
+
+   ```python
+   try:
+       q.put_nowait("data")
+   except queue.Full:
+       print("Queue is full")
+   ```
+
+4. get_nowait()
+
+   非阻塞地获取数据。如果队列为空，`get_nowait()` 会立即抛出 `queue.Empty` 异常，而不会等待。
+
+   ```python
+   try:
+       data = q.get_nowait()
+   except queue.Empty:
+       print("Queue is empty")
+   ```
+
+5. qsize()
+
+   返回当前队列中元素的数量。在某些系统上可能不可用。
+
+   ```python
+   print("Queue size:", q.qsize())
+   ```
+
+6. empty()和full()
+
+   检查队列是否为空或已满。注意，这两个方法并不是绝对安全的，因为在检查后，队列状态可能会被其他进程改变。
+
+   ```python
+   if q.empty():
+       print("Queue is empty")
+   
+   if q.full():
+       print("Queue is full")
+   ```
+
+   
+
+### 4.2.3Queue 使用实例
+
+**生产者-消费者模型**
+
+下面是一个使用 `Queue` 实现的生产者-消费者示例，展示了如何使用队列在进程之间传递数据。
+
+```python
+import time
+from multiprocessing import *
+
+def producer(queue):
+    for i in range(5):
+        queue.put(f"我是生产者，我发送的消息id = {i}")
+        time.sleep(1)
+
+def consumer(queue):
+    while True:
+        msg = queue.get()
+        print(msg)
+        i = msg.index("id")
+        if msg[i+5:] == "4":
+            break
+
+
+if __name__ == '__main__':
+    q = Queue()
+
+    p1 = Process(target=producer,args=(q,))
+    p2 = Process(target=consumer,args=(q,))
+
+    p1.start()
+    p2.start()
+
+    p1.join()
+    p2.join()
+```
+
+### 4.2.4Queue 特性与注意事项
+
+- **进程安全**：`Queue` 在实现时内置了锁机制，因此可以保证多进程访问时的数据安全性。
+- **阻塞与非阻塞操作**：`Queue` 支持阻塞与非阻塞模式，可以通过 `put_nowait()` 和 `get_nowait()` 实现非阻塞操作。
+- **容量限制**：可以通过 `maxsize` 限制队列的最大容量，这样可以有效控制数据量，避免内存消耗过多。
+
+## 4. 3共享内存（Value 和 Array）
+
+`Value` 和 `Array` 是 Python `multiprocessing` 模块中提供的共享内存对象，用于在多个进程间共享简单的数据结构，而不需要序列化或数据复制。
+- **`Value`** 用于共享单个值，比如整数或浮点数。
+- **`Array`** 用于共享一维数组，适合需要在进程间共享一组相同类型的元素。
+
+它们内部使用共享内存来存储数据，并提供锁机制来管理并发访问。
+
+### 4.3.1创建共享内存（Value 和 Array）
+
+`Value` 和 `Array` 使用 `typecode` 指定数据类型。`typecode` 是 `ctypes` 标准类型的一种标识符，表示共享内存中存储的数据类型。以下是常用的 `typecode` 对照表：
+
+| 类型代码 (typecode) | 数据类型                | Python 解释               |
+| ------------------- | ----------------------- | ------------------------- |
+| `'b'`               | 有符号字符型 (int8)     | -128 到 127               |
+| `'B'`               | 无符号字符型 (uint8)    | 0 到 255                  |
+| `'u'`               | Unicode 字符            | 单个 Unicode 字符         |
+| `'h'`               | 有符号短整型 (int16)    | -32,768 到 32,767         |
+| `'H'`               | 无符号短整型 (uint16)   | 0 到 65,535               |
+| `'i'`               | 有符号整型 (int)        | 一般为 32 位整数          |
+| `'I'`               | 无符号整型 (uint)       | 一般为 32 位整数          |
+| `'l'`               | 有符号长整型 (int32)    | -2147483648 到 2147483647 |
+| `'L'`               | 无符号长整型 (uint32)   | 0 到 4294967295           |
+| `'q'`               | 有符号长长整型 (int64)  | 64 位整数                 |
+| `'Q'`               | 无符号长长整型 (uint64) | 64 位无符号整数           |
+| `'f'`               | 浮点型 (float)          | 单精度浮点数              |
+| `'d'`               | 双精度浮点型 (double)   | 双精度浮点数              |
+| `'c'`               | 字符 (char)             | 单个字节字符              |
+
+#### 4.3.1.1Value的创建
+
+`Value` 的函数原型及参数解释：
+
+```python
+multiprocessing.Value(typecode, initial_value=None, lock=True)
+```
+
+**参数说明:**
+
+- **`typecode`**：字符类型代码，用于定义共享变量的数据类型。常见的 `typecode` 有：
+  - `'i'`：表示有符号整数
+  - `'d'`：表示双精度浮点数
+  - `'c'`：表示单个字符
+  - 更多类型请参考上表。
+- **`initial_value`** (可选)：用于设置共享变量的初始值。如果不指定，则默认为类型的初始值，如整数默认为 `0`。
+- **`lock`** (可选)：默认为 `True`，表示在访问共享变量时使用一个锁来保证线程安全。设为 `False` 可以禁用锁，适用于无需并发控制的场景。
+
+**返回值:**
+
+- `Value` 返回一个支持进程间共享的 `Synchronized` 对象，该对象有一个 `.value` 属性，==可以直接读取和修改共享数据==。
+
+#### 4.3.1.2 Array的创建
+
+`Array` 的函数原型及参数解释：
+
+```python
+multiprocessing.Array(typecode, size_or_initializer, lock=True)
+```
+
+**参数说明:**
+
+- **`typecode`**：字符类型代码，用于定义数组元素的数据类型。常见的 `typecode` 有：
+  - `'i'`：表示有符号整数
+  - `'d'`：表示双精度浮点数
+  - 更多类型请参考上表。
+- **`size_or_initializer`**：可以是一个整数或一个可迭代对象。如果是整数，则表示数组的大小，所有元素会初始化为类型默认值（如 `0`）；如果是可迭代对象，则数组会按此对象的内容进行初始化。
+- **`lock`** (可选)：默认为 `True`，表示在访问共享数组时使用一个锁以保证线程安全。设为 `False` 可以禁用锁，适用于无需并发控制的场景。
+
+**返回值:**
+
+- `Array` 返回一个支持进程间共享的 `SynchronizedArray` 对象，==可以直接通过索引读取和修改共享数组的元素。==
+
+
+
+### 4.3.2在进程中使用共享内存
+
+共享内存可以在多进程中使用。在子进程中可以直接访问主进程创建的 `Value` 和 `Array` 对象，从而实现数据共享。
+
+#### 4.3.2.1多进程中使用共享 Value
+
+```python
+from multiprocessing import Process, Value
+
+def increment(shared_val):
+    with shared_val.get_lock():  # 获取锁，确保安全访问
+        shared_val.value += 1
+
+if __name__ == "__main__":
+    shared_value = Value('i', 0)
+    
+    processes = [Process(target=increment, args=(shared_value,)) for _ in range(5)]
+    for p in processes:
+        p.start()
+    for p in processes:
+        p.join()
+    
+    print("Final Value:", shared_value.value)  # 输出：Final Value: 5
+```
+
+共享内存同步：
+
+```python
+import time
+from multiprocessing import Process,Value,Semaphore
+
+def task(shm,sem):
+    while True:
+            sem[1].acquire()
+            shm.value+=1
+            time.sleep(1)
+            sem[0].release()
+
+if __name__ == '__main__':
+    # 创建共享内存
+    shm = Value('i',0)
+    sem = [Semaphore(i) for i in range(2)]
+    p = [Process(target=task,args=(shm,sem)) for _ in range(1)]
+
+    for i in p:
+        i.start()
+    while True:
+        sem[0].acquire()
+        print(shm.value)
+        sem[1].release()
+
+```
+
+#### 4.3.2.2多进程中使用共享 Array
+
+```python
+import time
+from multiprocessing import Process,Array
+
+def task(shm,i):
+    with shm.get_lock():
+        shm[i] = shm[i] ** 2
+
+
+if __name__ == '__main__':
+    # 创建共享内存
+    shm = Array('i',[1,2,3,4,5])
+
+    p = [Process(target=task,args=(shm,i)) for i in range(5)]
+
+    for i in p:
+        i.start()
+
+    for i in p:
+        i.join()
+
+    print(shm[:])
+```
+
+### 4.3.3共享内存的特点及注意事项
+
+特点：
+
+- **简单数据类型共享**：`Value` 和 `Array` 适用于共享简单数据结构（例如，单个值或一维数组）。
+- **线程安全**：默认情况下，`Value` 和 `Array` 提供了锁（`Lock`），确保并发访问的安全性。
+- **便捷性**：它们是跨平台的，并且容易实现，不需要复杂的序列化或反序列化过程。
+
+注意事项：
+
+- **并发控制**：`Value` 和 `Array` 默认带有锁来确保数据安全。如果不需要锁定机制（例如，只有一个进程访问时），可以通过 `lock=False` 禁用锁。
+- **限制于简单类型**：`Value` 和 `Array` 适用于简单的数据结构，如标量或一维数组。如果需要共享更复杂的数据结构，推荐使用 `Manager` 或 `shared_memory` 模块。
+- **数据类型限制**：`Value` 和 `Array` 使用 `ctypes` 类型，因此需要使用对应的 `typecode` 指定数据类型。
+
+
+
+## 4.4shared_memory共享内存
+
+在 Python 的 `multiprocessing` 模块中，`shared_memory` 提供了一种高效的共享内存方式，允许不同进程间共享数据，而不必复制数据。共享内存适合于需要多进程频繁访问相同数据的大型数据集场景。
+
+### 4.4.1 创建 SharedMemory
+
+在 `multiprocessing.shared_memory` 中可以轻松创建一个共享内存块，并使用该块在进程之间传递数据。
+
+```python
+from multiprocessing import shared_memory
+
+# 创建一个共享内存块，大小为 1024 字节
+shm = shared_memory.SharedMemory(create=True, size=1024)
+```
+
+- **`create`**：指定是否创建新的共享内存块，`True` 表示新建；若为 `False`，则表示连接到已有的共享内存。
+- **`size`**：共享内存块的大小（字节数）。仅在创建新共享内存时设置。
+
+### 4.4.2 SharedMemory操作方法
+
+以下是 `SharedMemory` 提供的主要操作方法：
+
+| 方法           | 描述                                                         |
+| -------------- | ------------------------------------------------------------ |
+| **`buf`**      | 共享内存的缓冲区，允许直接读取或写入数据。例如，可以通过 `shm.buf[:]` 进行数组形式的数据操作。 |
+| **`close()`**  | 关闭共享内存对象，但不释放内存块。通常在进程结束时调用。     |
+| **`unlink()`** | 删除共享内存块。在所有进程不再使用共享内存后调用，以释放内存资源。 |
+| **`name`**     | 共享内存块的唯一名称，其他进程可以通过此名称连接到该内存块。 |
+
+### 4.3.3 SharedMemory使用实例
+
+**MyClass.py**
+
+```python
+import struct
+
+class MyClass:
+    def __init__(self,name,age):
+        self.__name = name
+        self.__age = age
+
+    def name_show(self):
+        print("name = ",self.__name)
+    def age_show(self):
+        print("age = ",self.__age)
+
+    def to_bytes(self):
+        # 将 name 转换为 10 字节的 UTF-8 字节数组，不足补空格，age 转换为 4 字节整数
+        name_bytes = self.__name.encode('utf-8').ljust(10, b' ')  # 固定 10 字节
+        age_bytes = struct.pack('i', self.__age)  # 4 字节整数
+        return name_bytes + age_bytes
+
+    @classmethod
+    def from_bytes(cls, byte_data):
+        # 从 10 字节的 name 和 4 字节的 age 解析
+        name =  bytes(byte_data[:10]).decode('utf-8').strip()  # 去除补充的空格
+        age = struct.unpack('i', byte_data[10:14])[0]
+        return cls(name, age)
+```
+
+**sender.py**
+
+```python
+import os
+import time
+from  MyClass  import *
+from multiprocessing import shared_memory
+if __name__ == '__main__':
+    print(os.getpid())
+    p = MyClass("zhangsan",20)
+    shm = shared_memory.SharedMemory(name="shm",create=True,size=14)
+    shm.buf[:14] = p.to_bytes()
+    time.sleep(10)
+    try:
+        shm.close()
+        shm.unlink()
+    except BufferError as e:
+        print(e)
+
+```
+
+**reader.py**
+
+```python
+import os
+
+from MyClass import *
+from multiprocessing import shared_memory
+
+if __name__ == "__main__":
+    print(os.getpid())
+    shm = shared_memory.SharedMemory(name="shm",)
+    ba = shm.buf[:14]
+    p = MyClass.from_bytes(ba)
+    p.name_show()
+    p.age_show()
+    try:
+        shm.close()
+        shm.unlink()
+    except BufferError as e:
+        print(e)
+
+```
+
+
+
+### 4.4.4 SharedMemory特性与注意事项
+
+- **高效性**：`SharedMemory` 允许在不同进程间共享数据而不复制数据，适用于处理大量数据的情景。
+- **需要手动管理内存**：在所有进程不再使用共享内存后，必须调用 `unlink()` 来释放资源，否则可能会造成内存泄漏。
+- **跨进程访问**：共享内存通过 `name` 在不同进程间共享，确保每个进程都使用 `close()` 和 `unlink()` 正确清理内存资源。
+
+
+
+## 4.5Manager（管理器）
+
+`Manager` 提供了共享对象的方式，支持多个进程对共享的字典、列表、命名空间等进行访问和修改。`Manager` 的性能比 `Queue` 和 `Pipe` 略差，但使用起来更灵活。
+
+```python
+from multiprocessing import Process, Manager
+
+def update_dict(d):
+    d["key"] = "value"
+
+if __name__ == "__main__":
+    with Manager() as manager:
+        shared_dict = manager.dict()
+        p = Process(target=update_dict, args=(shared_dict,))
+        p.start()
+        p.join()
+        print("共享字典内容:", shared_dict)
+```
+
+在这个例子中，`shared_dict` 是一个由 `Manager` 创建的共享字典，`update_dict` 函数可以在不同进程中修改这个共享字典。
+
+- 

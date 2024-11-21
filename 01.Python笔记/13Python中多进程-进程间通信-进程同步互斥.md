@@ -81,11 +81,11 @@ Python 有一个全局解释器锁（GIL），限制了多线程的并行执行�
 class multiprocessing.Process(group=None, target=None, name=None, args=(), kwargs={}, daemon=None)
 ```
 
-==功能：==
+功能：
 
 `Process` 类用于创建和管理一个新的进程。进程是操作系统资源的单独实例，它包含程序的代码和运行时状态。在多进程模型中，每个进程独立运行，并且有自己的内存空间。
 
-==参数：==
+参数：
 
 - **group**：目前必须为 `None`，是为了将来扩展预留的。
 - **target**：一个可调用对象，当进程启动时会调用这个对象。如果 `None`，则不调用任何对象。
@@ -94,11 +94,11 @@ class multiprocessing.Process(group=None, target=None, name=None, args=(), kwarg
 - **kwargs**：传递给 `target` 函数的字典。
 - **daemon**：如果是 `True`，表示该进程是守护进程。守护进程会在主进程退出时自动终止。
 
-==返回值：==
+返回值：
 
 构造函数本身没有返回值，但是它创建并返回一个 `Process` 对象实例。
 
-==方法:==
+方法:
 
 `start()`
 
@@ -137,7 +137,7 @@ class multiprocessing.Process(group=None, target=None, name=None, args=(), kwarg
 - **功能**：用于强制终止进程。这是一个立即停止进程执行的方法，与 `terminate()` 类似，但通常更激进，可能不会执行任何清理操作。
 - **返回值**：无
 
-==属性:==
+属性:
 
 - **name**：进程名称。
 - **pid**：进程 ID。
